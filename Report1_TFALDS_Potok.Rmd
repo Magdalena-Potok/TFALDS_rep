@@ -1,0 +1,544 @@
+---
+output: 
+  pdf_document:
+---
+
+\begin{titlepage}
+    \centering
+    {\Huge \textbf{Theoretical Foundations of the Analysis of Large Data Sets}\\[1.5cm]}
+    {\huge \textbf{Report 1}\\[4cm]}
+    {\Large \textbf{Magdalena Potok}\\[3cm]}
+    
+    \vfill
+    {\Large Prepared on:}\\[0.2cm]
+    {\Large \textbf{October 27, 2024}}
+\end{titlepage}
+
+\newpage 
+## Excercise 1
+Given a simple random variable $X_1, \dots, X_n$ from a distribution with the density funcion $f(x, \alpha) = (\alpha + 1)x^\alpha$ for $x \in (0,1)$ and $\alpha > -1$, we observe that $X_1, \dots, X_n \sim Beta(\alpha + 1, 1)$. 
+\newline
+The **maximum likelihood estimator** is the value of the parameter that maximizes the **likelihood function**, here it is $L(\alpha) = \prod_{i = 1}^n f(x_i, \alpha) = (\alpha + 1)^n \prod_{i=1}^n x_i^{\alpha}.$ To simplify the optimization, we work with the **log-likelihood function** $l(\alpha) = nlog(\alpha + 1) + \alpha \sum_{i=1}^n logx_i$. To find the $MLE$, we take the derivative of the log-likehood function with respect to $\alpha$ and set it to zero: $\frac{d l}{d \alpha} = n\frac{1}{\alpha + 1} + \sum_{i=1}^nlogx_i = 0$. Solving this equation yields the $MLE$ of $\alpha$: $$\hat{\alpha}_{MLE} = -1 - \frac{n}{\sum_{i = 1}^n logX_i}.$$ 
+To confirm that $\hat{\alpha}_{MLE}$ maximizes the likelihood, we check the second derivative of the log-likelihood function $\frac{d^2l}{d\alpha^2} = -\frac{n}{(\alpha + 1)^2}$. Since this is negative is confirms, that calculated estimator is a maximum. \newline
+**Fisher Information** quantifies the amount of information that the observed data provide about the parameter $\alpha$. It plays a key role in the asymptotic properties of the $MLE$, especially in determining the covariance matrix of the $MLE$. It is also essential in formulating test statistics, such as the Wald test. The Fisher information is computed as the negative expected value of the second derivative of the log-likelihood function, for this model, we find that:
+$$I(\alpha) = -\mathbb{E}\big(\frac{\partial^2logf(x, \alpha)}{\partial \alpha^2} \big) = \mathbb{E} \big(\frac{1}{(\alpha + 1)^2} \big) =  \frac{1}{(\alpha + 1)^2}.$$  
+The **asymptotic distribution** of the $MLE$ describes its behavior as the sample size $n$ becomes large. The central limit theorem implies that the $MLE$ is approximately normally distributed for large $n$ $\sqrt{n}(\hat{\alpha_n} - \alpha_0) \xrightarrow{d} N(0, \frac{1}{I(\alpha)}),$ so here it means that $\sqrt{n}(\hat{\alpha}_n - \alpha_0) \xrightarrow{d} N(0, (\alpha+1)^2)$. In this case, the asymptotic distribution od $\hat{\alpha}_n$ is:
+ $$\hat{\alpha}_n \sim N(\alpha, \frac{(\alpha + 1)^2}{n}).$$ 
+ 
+The **method of moments estimator** is based on equation the theoretical moments of the distribution to the sample moments. The first moment (mean) of the distribution $f(x, \alpha)$ is $\frac{\alpha + 1}{\alpha + 2}$. By solving for $\alpha$ in terms of the sample mean $\bar{X}$ we get the equation $\frac{\alpha + 1}{\alpha + 2} = \frac{1}{n}\sum_{i=1}^n X_i$, we derieve the $MoM$ estimator as:
+$$\hat{\alpha}_{mom} = \frac{2\bar{X} - 1}{1 - \bar{X}},$$
+where $\bar{X}$ is the sample mean.
+
+
+
+```{r, echo = FALSE}
+library(latex2exp)
+library(knitr)
+set.seed(411)
+library(ggplot2)
+library(gridExtra)
+library(grid)
+library(kableExtra)
+library(patchwork)
+
+```
+
+Now we fix $\alpha = 5$ and generate one random sample of the size $n = 20$ to calculate both estimators and the respective values of $\alpha - \hat{\alpha}$ and $(\alpha - \hat{\alpha})^2$.
+
+```{r, echo = FALSE}
+alpha = 5
+n = 20
+x = rbeta(n, alpha + 1, 1)
+
+alpha_mle = -1 - n/sum(log(x))
+alpha_mom = -1 + (1/n * sum(x))/(1 - 1/n*sum(x))
+val = c(alpha - alpha_mle, alpha - alpha_mom)
+val_squared = val^2
+df = data.frame(round(val,3), round(val_squared,3))
+t_df = t(df)
+colnames(t_df) = c("$\\hat\\alpha_{MLE}$", "$\\hat\\alpha_{MoM}$")
+rownames(t_df) = c("$\\alpha - \\hat\\alpha$", "$(\\alpha - \\hat\\alpha)^2$")
+kable(t_df)
+```
+
+
+The method of moments estimator is more accurate because the difference between this estimator and the true value of 
+$\alpha$ is smaller than the value of the maximum likelihood estimator.
+
+The previous experiment was based on a single sample, but we know that using more samples provides more reliable results. To gain better insights, we will evaluate which estimator performs better by using $1000$ samples for two different values of 
+$n$ ($20$ and $200$), and then compare the results.
+\newpage
+
+**1. Comparing Boxplots**
+
+```{r, echo = FALSE, fig.height = 3}
+alpha_mle_1000 = c()
+alpha_mom_1000 = c()
+
+for(i in 1:1000){
+  x_1 = rbeta(20, alpha +1, 1)
+  alpha_mle_1000 = c(alpha_mle_1000, -1-n/sum(log(x_1)))
+  alpha_mom_1000 = c(alpha_mom_1000, -1 + (1/n * sum(x_1))/(1 - 1/n*sum(x_1)))
+}
+
+data_df_20 <- data.frame(
+  Estimator = rep(c("MLE", "MOM"), each = 1000),
+  value = c(alpha_mle_1000, alpha_mom_1000)
+)
+
+
+g1 <- ggplot(data_df_20, aes(x = Estimator, y = value, fill = Estimator)) +
+  geom_boxplot() +
+  labs(title = TeX("Boxplot of estimators for $\\alpha, n = 200$"),
+       x = "Estimator",
+       y = TeX("Estimated $\\alpha$")) +
+  theme_minimal() +
+  theme(legend.position = "none")+
+  scale_y_continuous(limits = c(1.5,11.5))+
+  scale_fill_manual(values = c("lightskyblue1", "lightskyblue3"))
+
+```
+
+```{r, echo = FALSE, fig.height = 6}
+
+alpha_mle_1000_200 = c()
+alpha_mom_1000_200 = c()
+n = 200
+
+for(i in 1:1000){
+  x_1 = rbeta(200, alpha +1, 1)
+  alpha_mle_1000_200 = c(alpha_mle_1000_200, -1-n/sum(log(x_1)))
+  alpha_mom_1000_200 = c(alpha_mom_1000_200, -1 + (1/n * sum(x_1))/(1 - 1/n*sum(x_1)))
+}
+
+data_df_200 <- data.frame(
+  Estimator = rep(c("MLE", "MOM"), each = 1000),
+  value = c(alpha_mle_1000_200, alpha_mom_1000_200)
+)
+
+# Create boxplot
+g2 <- ggplot(data_df_200, aes(x = Estimator, y = value, fill = Estimator)) +
+  geom_boxplot() +
+  labs(title = TeX("Boxplot of estimators for $\\alpha, n = 200$"),
+       x = "Estimator",
+       y = TeX("Estimated $\\alpha$")) +
+  theme_minimal() +
+  theme(legend.position = "none")+
+  scale_y_continuous(limits = c(1.5,11.5)) +
+  scale_fill_manual(values = c("lightskyblue1", "lightskyblue3"))
+
+
+grid.arrange(g1,g2)
+```
+When sample size is $n = 20$ we can see that both the $MLE$ and $MoM$ estimators have the same median (around $5.5$), but the $MoM$ estimator has a little wider spread, which indicates higher variability. We can see that there are several outliers for both estimators, suggesting more extreme values are common. When sample size is $n = 200$ both estimators show much reduced variability compared to the situation, when $n = 20$. The median is closer to the real value of $\alpha = 5$. There are fewer outliers in larger sample, which is expected as the estimators stabilize with more data. The wishers are much shorter compared to $n = 20$, suggesting lower variability. For situation $n = 20$ and $n = 200$ boxplots for both estimators looks almost the same, and it is challenging to determine which one is better.
+\newpage
+
+**2. Comparing histograms**
+
+```{r, echo = FALSE, fig.width = 6, fig.height = 3, warning = FALSE}
+data_df_20_MLE = data_df_20[data_df_20$Estimator == "MLE",]
+data_df_20_MOM = data_df_20[data_df_20$Estimator == "MOM",]
+
+hist_MLE_20 <- ggplot(data_df_20_MLE, aes(x = value)) +
+  geom_histogram(aes(y = ..density..),binwidth = 0.44, fill = "lightskyblue1", color = "black", alpha = 1) +
+  labs(title = TeX("$MLE, n = 20$"),
+       x = "Estimated value",
+       y = "Density") +
+  theme_minimal() +
+  scale_x_continuous(limits = c(2, 10))+
+  scale_y_continuous(limits = c(0, 1))+
+  stat_function(fun = dnorm, args = list(mean = mean(data_df_20_MLE$value), sd = sd(data_df_20_MLE$value)), 
+                color = "red", size = 0.8) 
+
+hist_MOM_20 <- ggplot(data_df_20_MOM, aes(x = value)) +
+  geom_histogram(aes(y = ..density..),binwidth = 0.44, fill = "lightskyblue3", color = "black", alpha = 1) +
+  labs(title = TeX("$MoM, n = 20$"),
+       x = "Estimated value",
+       y = "Density") +
+  theme_minimal() +
+  scale_x_continuous(limits = c(2, 10))+
+  scale_y_continuous(limits = c(0, 1))+
+  stat_function(fun = dnorm, args = list(mean = mean(data_df_20_MOM$value), sd = sd(data_df_20_MOM$value)), 
+                color = "red", size = 0.8) 
+#grid.arrange(hist_MLE_20, hist_MOM_20, ncol = 2, top = textGrob("Histogram of estimators for alpha"))
+
+```
+
+```{r, echo = FALSE, fig.height = 6, warning = FALSE}
+
+data_df_200_MLE = data_df_200[data_df_200$Estimator == "MLE",]
+data_df_200_MOM = data_df_200[data_df_200$Estimator == "MOM",]
+
+
+hist_MLE_200 <- ggplot(data_df_200_MLE, aes(x = value)) +
+  geom_histogram(aes(y = ..density..),binwidth = 0.44, fill = "lightskyblue1", color = "black", alpha = 1) +
+  labs(title = TeX("$MLE, n = 200$"),
+       x = "Estimated value",
+       y = "Density") +
+  theme_minimal() +
+  scale_x_continuous(limits = c(2, 10))+
+  stat_function(fun = dnorm, args = list(mean = mean(data_df_200_MLE$value), sd = sd(data_df_200_MLE$value)), 
+                color = "red", size = 0.8) 
+
+
+hist_MOM_200 <- ggplot(data_df_200_MOM, aes(x = value)) +
+  geom_histogram(aes(y = ..density..), binwidth = 0.44, fill = "lightskyblue3", color = "black", alpha = 1) +
+  labs(title = TeX("$MoM, n = 200$"),
+       x = "Estimated value",
+       y = "Density") +
+  theme_minimal() +
+  scale_x_continuous(limits = c(2, 10))+
+  stat_function(fun = dnorm, args = list(mean = mean(data_df_200_MOM$value), sd = sd(data_df_200_MOM$value)), 
+                color = "red", size = 0.8)
+  
+grid.arrange(hist_MLE_20, hist_MOM_20, hist_MLE_200, hist_MOM_200, ncol = 2, top = textGrob("Histograms of estimators for alpha"))
+
+
+```
+For $n = 20$, both $MLE$ and $MoM$ estimators show that most observations have a value close to $5$, both of them are spread-out distributions, indicating high variability. The red line in each plot represents the normal distribution curve fitted based on the mean and standard deviation of the data, providing a visual reference for how closely the estimated values follow a normal distribution. In both cases for $n = 20$, the histograms show a right-skewed pattern, meaning there are more values to the left of the distribution's peak, with a longer tail to the right. For $n = 200$ $MLE$ and $MoM$ estimators give much tighter and more concentrated histograms around the true value $5$. This reflects the asymptotic properties of these estimators: as the sample size increases, the estimators become more precise, with lower variance. We can see that more observations are close to $5$ for $MLE$ estimator, which suggest the $MLE$ estimator is more efficient.
+\newpage 
+
+**3. Comparing QQ-plots**
+
+```{r, echo = FALSE, fig.height = 6}
+
+qqplot_20_MLE <- ggplot(data_df_20_MLE, aes(sample = value)) +
+  stat_qq(color = "lightskyblue1") + 
+  stat_qq_line() + 
+  theme_minimal() +
+  labs(title = "MLE, n = 20", x = "Theoretical quantiles", y= "Empirical quantiles")
+
+
+qqplot_20_MOM <- ggplot(data_df_20_MOM, aes(sample = value)) +
+  stat_qq(color = "lightskyblue3") + 
+  stat_qq_line() + 
+  theme_minimal() +
+  labs(title = "MoM, n = 20", x = "Theoretical quantiles", y= "Empirical quantiles")
+
+
+qqplot_200_MLE <- ggplot(data_df_200_MLE, aes(sample = value)) +
+  stat_qq(color = "lightskyblue1") + 
+  stat_qq_line() + 
+  theme_minimal() +
+  labs(title = "MLE, n = 200", x = "Theoretical quantiles", y= "Empirical quantiles")+
+  scale_y_continuous(breaks = c(3, 6, 9), limits = c(1.5, 10.5)) 
+
+
+qqplot_200_MOM <- ggplot(data_df_200_MOM, aes(sample = value)) +
+  stat_qq(color = "lightskyblue3") + 
+  stat_qq_line() + 
+  theme_minimal() +
+  labs(title = "MoM, n = 200", x = "Theoretical quantiles", y= "Empirical quantiles") +
+  scale_y_continuous(breaks = c(3, 6, 9), limits = c(1.5, 10.5)) 
+
+grid.arrange(qqplot_20_MLE, qqplot_20_MOM, qqplot_200_MLE, qqplot_200_MOM, ncol = 2, top = textGrob("Q-q plots of estimators for alpha"))
+```
+
+When sample size is $n = 20$ for both estimators the plot deviates from the straight line in both tails, especially in upper tail. This indicates that these estimators have heavier tails than normal distribution when the sample size is small. For sample size $n = 200$ both Q-Q plots follows the straight line across the entire range, showing perfect agreement with the theoretical normal quantiles. This indicates that both of estimators is approximately normally distributed as the sample size increases.
+
+\newpage 
+**4. Comparing estimated bias, variance and MSE**
+
+
+
+```{r, echo = FALSE}
+
+
+biases_20 = c(mean(data_df_20_MLE$value) - 5, mean(data_df_20_MOM$value) - 5)
+
+biases_200 = c(mean(data_df_200_MLE$value) - 5, mean(data_df_200_MOM$value) - 5)
+
+variances_20 <- c(var(data_df_20_MLE$value),var(data_df_20_MOM$value))
+
+variances_200 = c(var(data_df_200_MLE$value),var(data_df_200_MOM$value))
+
+mses_20 = variances_20 + biases_20^2
+mses_200 = variances_200 + biases_200^2
+
+df_values = data.frame(
+  Bias = biases_20,
+  Var = variances_20,
+  MSE = mses_20,
+  ias = biases_200,
+  Var = variances_200,
+  MSE = mses_200
+)
+
+df_values = round(df_values,3)
+names(df_values) = c("Bias", "Var", "MSE", "Bias", "Var", "MSE")
+row.names(df_values) = c("$\\hat\\alpha_{MLE}$", "$\\hat\\alpha_{MoM}$")
+kable(df_values, booktabs = TRUE, escape = FALSE, format = 'latex') %>%
+  add_header_above(c(" "=1,"n = 20" = 3, "n = 200" = 3)) %>%
+  kable_styling(latex_options = "HOLD_position")
+
+```
+
+For small sample size ($n = 20$) the $MLE$ estimator has a slightly higher bias compared to $MoM$, which means that the $MLE$ estimates are slightly more off from the true value on average. The variance for $MLE$ is marginally lower than for $MoM$, indicating slightly less variability in the estimates for $MLE$. Both estimators ave almost identical MSE, though $MoM$ has a slightly lower MSE, is combines both bias and variance, so this suggest that, overall, $MoM$ performs very slightly better for $n = 20$. When the size of sample is larger $n = 200$ MSE for both estimators are almost the same, this suggest that with large samples $MLE$ and $MoM$ perform almost identically, but $MLE$ very slightly performs better, because it has lower value of $MSE$.
+
+**Theoretical parameters provided by asymptotic distribution of $MLE$.**
+
+```{r, echo = FALSE}
+# Var = (\alpha+1)^2/20
+# Bias = 0
+# MSE = Var + Bias^2 = Var
+
+df_asym_mle = data.frame(
+  Bias = c(0,0),
+  Var = c(36/20, 36/200),
+  MSE = c(36/20, 36/200)
+)
+
+row.names(df_asym_mle) = c("$\\hat\\alpha_{MLE}, n = 20$","$\\hat\\alpha_{MLE}, n = 200$")
+
+
+kable(df_asym_mle, booktabs = TRUE, escape = FALSE, format = 'latex') %>%
+  kable_styling(latex_options = "HOLD_position")
+```
+For $n = 20$ the theoretical variance, MSE and bias are lower that the empirical values, indicating that the small-sample performance of $MLE$ does not match the asymptotic results. For large sample size theoretical values of parameters closely match the empirical values, suggesting that the $MLE$ aligns well with its asymptotic properties when $n = 200$.
+
+
+**5. 95% Confidence intervals**
+
+```{r, echo = FALSE}
+
+
+
+ci_var <- function(dane){
+  n = length(dane)
+  ci_var_down = (n-1)*var(dane)/qchisq(1-0.05/2,n-1)
+  ci_var_up  = (n-1)*var(dane)/qchisq(0.05/2,n-1)
+  return(sprintf("[%.3f,%.3f]", ci_var_down, ci_var_up))
+}
+
+
+
+
+
+ci_bias <- function(dane){
+  n = length(dane)
+  ic_bias_down = mean(dane) - 5 -qnorm(1-0.05/2)*sd(dane)/sqrt(n)
+  ic_bias_up = mean(dane) - 5 +qnorm(1-0.05/2)*sd(dane)/sqrt(n)
+  return(sprintf("[%.3f, %.3f]", ic_bias_down, ic_bias_up))
+}
+
+# mse = var + mean - 5
+
+ci_mse <- function(dane){
+  n = length(dane)
+  mse = var(dane) +  (mean(dane) -5)^2
+  ci_mse_down = mse - qnorm(1-0.05/2)*sd(dane)/sqrt(n)
+  ci_mse_up = mse + qnorm(1-0.05/2)*sd(dane)/sqrt(n)
+  return(sprintf("[%.3f, %.3f]", ci_mse_down, ci_mse_up))
+}
+
+
+
+
+ci_dataframe = data.frame(
+  Var = c(ci_var(data_df_20_MLE$value), ci_var(data_df_200_MLE$value)),
+  Bias = c(ci_bias(data_df_20_MLE$value),ci_bias(data_df_200_MLE$value)),
+  MSE =c(ci_mse(data_df_20_MLE$value),ci_mse(data_df_200_MLE$value)),
+  Var = c(ci_var(data_df_20_MOM$value), ci_var(data_df_200_MOM$value)),
+  Bias = c(ci_bias(data_df_20_MOM$value),ci_bias(data_df_200_MOM$value)),
+  MSE = c(ci_mse(data_df_20_MOM$value),ci_mse(data_df_200_MOM$value))
+  
+)
+
+row.names(ci_dataframe) = c("$\\hat\\alpha_{MLE}$", "$\\hat\\alpha_{MoM}$")
+names(ci_dataframe) = c("Var", "Bias", "MSE", "Var", "Bias", "MSE")
+kable(ci_dataframe, booktabs = TRUE, escape = FALSE, format = 'latex') %>%
+  add_header_above(c(" "=1,"n = 20" = 3, "n = 200" = 3)) %>%
+  kable_styling(latex_options = "HOLD_position")
+
+
+
+
+```
+
+In the table, we observe that for both sample sizes $n = 20$ and $n = 200$, the $MLE$ estimator has much wider confidence intervals compared to the $MoM$ estimator. This suggests greater variability and uncertainty in the $MLE$ estimates. For $n = 20$, the $MLE$ intervals are especially spread out, indicating that $MLE$ is less reliable with smaller sample sizes. As the sample size increases to $n = 200$, both estimators show more precision, with narrower intervals, but $MLE$ still exhibits more spread than $MoM$. The $MoM$ estimator consistently provides tighter confidence intervals, reflecting higher stability and precision across both sample sizes. This highlights the better performance of $MoM$, particularly in smaller samples.
+
+
+\newpage
+
+## Excercise 2
+
+
+Simple random sample $X_1, \dots,X_n$ from the distribution with the density $f(x, \lambda) = \lambda e^{-\lambda x}, \quad x>0, \lambda>0$ is a random sample from the exponential distribution with parameter $\lambda$. \newline
+To find the uniformly most powerful test at level $\alpha = 0.05$ for testing the hypothesis
+$$H_0 : \lambda = 5 \quad \text{against} \quad H_1: \lambda = 3$$
+we use the **Neyman-Pearson lemma**. \newline
+The **critical value** for this test can be determined using the following inequality:
+$$\frac{\prod_{i=1}^n f_{H_1}(x,\lambda)}{\prod_{i=1}^n f_{H_0}(x,\lambda)} > k,$$
+where $\alpha$, the significance level, represents the probability of committing a Type I error. This inequality provides a threshold for $\sum_{i=1}^n x_i$ is our statistic. Since we know that the sum of independent exponential distributions follows a Gamma distribution with parameters $n$ and $\lambda$, the critical value condition in terms of Gamma CDF is: $\alpha = \mathbb{P}_{H_0}(\sum_{i=1}^n x_i > k^*) \implies k^* = F^{-1}_{Gamma(n,5)}(1-\alpha)$. \newline
+To calculate the **power** of the test, which is the complement of the probability of making a Type II error, the expression becomes: $\mathbb{P}_{H_1}(X \in C) = 1 - F_{Gamma(n,3)} \Big(F^{-1}_{Gamma(n,5)}(1-\alpha) \Big)$. \newline
+$P$-value is the probability of observing a test statistic as extreme or more extreme that the observed value under $H_0$. 
+$$ p = \mathbb{P}(T > \sum_{i = 1}^n x_i | T \sim Gamma(n, 5)) = 1 - F_{Gamma(n,5)}(\sum_{i=1}^n x_i)$$
+```{r, echo = FALSE}
+?rexp
+samp_H0 <- rexp(20,5)
+samp_H1 <- rexp(20, 3)
+
+p_val0 <- 1 - pgamma(sum(samp_H0), 20, 5)
+p_val1 <- 1 - pgamma(sum(samp_H1), 20, 5)
+
+```
+
+For $n = 20$ we generate one random sample from $H_0$ and another from $H_1$ and the respective $p$-values are `r round(p_val0,3)` and `r round(p_val1,3)`. In the case where the sample is drawn from $H_0$, we fail to reject the null hypothesis since the $p$-value is greater than $\alpha$. However, in the second case, where the sample is drawn from $H_1$, the $p$-value allows us to reject the null hypothesis, which is the expected outcome. \newline
+The $p$-value follows a uniform distribution on
+$[0,1]$ when the data come from $H_0$ because, under the null hypothesis, all $p$-values are equally likely. This means the probability of observing any particular $p$-value between 0 and 1 is the same. \newline
+Now we will generate $1000$ samples of the size $n = 20$ and $n = 200$ from $H_0$ and $H_1$ and calculate respective $p$-values. We will compare the distribution of these $p$-values to the distribution derieved in.
+
+```{r, echo = FALSE, fig.height = 3}
+p_val0_20 <- c()
+p_val1_20 <- c()
+p_val0_200 <- c()
+p_val1_200 <- c()
+for (i in 1:1000){
+  
+  samp_H0 = rexp(20,5)
+  samp_H1 = rexp(20, 3)
+  
+  p_val0_20 = c(p_val0_20, 1 - pgamma(sum(samp_H0), 20, 5))
+  p_val1_20 = c(p_val1_20, 1 - pgamma(sum(samp_H1), 20, 5))
+  samp_H0 = rexp(200,5)
+  samp_H1 = rexp(200, 3)
+  p_val0_200 = c(p_val0_200, 1 - pgamma(sum(samp_H0), 200, 5))
+  p_val1_200 = c(p_val1_200, 1 - pgamma(sum(samp_H1), 200, 5))
+  
+  
+}
+
+
+df_p_val_20 <- data.frame(
+  p_values = c(p_val0_20, p_val1_20),
+  hypothesis = rep(c("H0", "H1"), each = 1000)
+)
+
+df_p_val_200 <- data.frame(
+  p_values = c(p_val0_200, p_val1_200),
+  hypothesis = rep(c("H0", "H1"), each = 1000)
+)
+
+hist_p_val_20 <- ggplot(df_p_val_20, aes(x = p_values, fill = hypothesis)) +
+  geom_histogram(alpha = 0.8, position = "identity", bins = 30, color = "black") +
+  scale_fill_manual(values = c("H0" = "deepskyblue4", "H1" = "brown4")) +
+  labs(title = "Histogram of p-values, n = 20", x = "p-values", y = "Count") +
+  theme_minimal() +
+  theme(legend.position = "none")+ 
+  scale_y_continuous(limits = c(0,1000))
+
+# Histogram dla n = 200
+
+dens_200H0 <- density(df_p_val_200[df_p_val_200$hypothesis == "H0",]$p_values)
+hist_p_val_200 <- ggplot(df_p_val_200, aes(x = p_values, fill = hypothesis)) +
+  geom_histogram(alpha = 0.8, position = "identity", bins = 30, color = "black") +
+  scale_fill_manual(values = c("H0" = "deepskyblue4", "H1" = "brown4")) +
+  labs(title = "Histogram of p-values, n = 200", x = "p-values", y = "Count") +
+  theme_minimal() 
+
+
+combined_plot <- hist_p_val_20 + hist_p_val_200 + 
+  plot_layout(ncol = 2, guides = "collect") + 
+  plot_annotation(title = "Comparison of p-values Histograms", 
+                  theme = theme(plot.title = element_text(hjust = 0.5)))
+
+combined_plot
+```
+For both sample sizes, the $p$-values from $H_0$ follow a uniform distribution, as expected. This reflects that when the null hypothesis is true, $p$-values are equally likely across the interval $[0,1]$. Also for both sample sizes, the $p$-values under $H_1$ are concentrated around smaller values, indicating that most of them arre under the significance level $\alpha = 0.05$. This suggests that when the alternative hypothesis is true, the test correctly rejects $H_0$ most of the time, as we would expect. We can also notice that the power of the test increases as the sample size grows, because when $n = 200$ it is more frequent to reject $H_0$ when it is false.
+\newline
+
+```{r, echo = FALSE, fig.align = "center"}
+df_p_val_20H0 = df_p_val_20[df_p_val_20$hypothesis == "H0",]
+df_p_val_20H1 = df_p_val_20[df_p_val_20$hypothesis == "H1",]
+df_p_val_200H0 = df_p_val_200[df_p_val_200$hypothesis == "H0",]
+df_p_val_200H1 = df_p_val_200[df_p_val_200$hypothesis == "H1",]
+
+qqplot_20H0 = ggplot(df_p_val_20H0, aes(sample = p_values)) +
+  stat_qq(distribution = qunif, color = "skyblue4") +  
+  stat_qq_line(distribution = qunif) + 
+  theme_minimal() +
+  labs(title = "H0, n = 20", x = "Theoretical quantiles", y= "Empirical quantiles")
+
+qqplot_20H1 = ggplot(df_p_val_20H1, aes(sample = p_values)) +
+  stat_qq(distribution = qunif, color = "brown4") +  
+  stat_qq_line(distribution = qunif) + 
+  theme_minimal() +
+  labs(title = "H1, n = 20", x = "Theoretical quantiles", y= "Empirical quantiles")
+
+qqplot_200H0 = ggplot(df_p_val_200H0, aes(sample = p_values)) +
+  stat_qq(distribution = qunif, color = "skyblue4") +  
+  stat_qq_line(distribution = qunif) + 
+  theme_minimal() +
+  labs(title = "H0, n = 200", x = "Theoretical quantiles", y= "Empirical quantiles")
+
+qqplot_200H1 = ggplot(df_p_val_200H1, aes(sample = p_values)) +
+  stat_qq(distribution = qunif, color = "brown4") +  
+  stat_qq_line(distribution = qunif) + 
+  theme_minimal() +
+  labs(title = "H1, n = 200", x = "Theoretical quantiles", y= "Empirical quantiles") +
+  scale_y_continuous(limits = c(-0.25/2, 0.75+ 0.25/2))
+
+qqplot_20H0 + qqplot_20H1 +qqplot_200H0 +qqplot_200H1 
+```
+The Q-Q plots illustrate that uder $H_0$, $p$-values follow a uniform distribution for both $n$ values, aligning with theoretical expectationa and ensuring controlled type I error rates. Under $H_1$, the distribution is highly skewed towards zero, the skew increasing as the sample size grows. This indicated higher test power with larger samples, as expected.
+\newline
+Using these simulations we construct the $95 \%$ confidence interval for the type $I$ error of the test when data is from distribution from $H_0$ and for the power of the test, when data is from $H_1$. The calculated confidence interval for the power of the test we compare with the theoretically calculated power. 
+
+```{r, echo = FALSE}
+
+hatp_20 = nrow(df_p_val_20H0[df_p_val_20H0$p_values < 0.05,])/1000
+
+hatp_200 = nrow(df_p_val_200H0[df_p_val_200H0$p_values < 0.05,])/1000
+
+
+ic_l_20 = hatp_20 - qnorm(1-0.05/2) * sqrt(hatp_20 * (1 - hatp_20)/1000)
+
+ic_r_20 = hatp_20 + qnorm(1-0.05/2) * sqrt(hatp_20 * (1 - hatp_20)/1000)
+
+ic_20_pow = sprintf("[%.3f, %.3f]", ic_l_20, ic_r_20)
+
+ic_l_200 =hatp_200 - qnorm(1-0.05/2) * sqrt(hatp_200 * (1 - hatp_200)/1000)
+
+ic_r_200 =hatp_200 + qnorm(1-0.05/2) * sqrt(hatp_200 * (1 - hatp_200)/1000)
+
+ic_20_er = sprintf("[%.3f, %.3f]", ic_l_20, ic_r_20)
+ic_200_er = sprintf("[%.3f, %.3f]", ic_l_200, ic_r_200)
+
+hatp1_20 = nrow(df_p_val_20H1[df_p_val_20H1$p_values < 0.05,])/1000
+
+hatp1_200 = nrow(df_p_val_200H1[df_p_val_200H1$p_values < 0.05,])/1000
+
+ic_l1_20 = hatp1_20 - qnorm(1-0.05/2) * sqrt(hatp1_20 * (1 - hatp1_20)/1000)
+
+ic_r1_20 = hatp1_20 + qnorm(1-0.05/2) * sqrt(hatp1_20 * (1 - hatp1_20)/1000)
+
+ic_l1_200 = hatp1_200 - qnorm(1-0.05/2) * sqrt(hatp1_200 * (1 - hatp1_200)/1000)
+
+ic_r1_200 = hatp1_200 + qnorm(1-0.05/2) * sqrt(hatp1_200 * (1 - hatp1_200)/1000)
+
+ic_20_pow = sprintf("[%.3f, %.3f]", ic_l1_20, ic_r1_20)
+ic_200_pow = sprintf("[%.3f, %.3f]", ic_l1_200, ic_r1_200)
+
+finaldf = data.frame(
+  Error = c(ic_20_er, ic_200_er),
+  Power = c(ic_20_pow, ic_200_pow),
+  Theorerical = round(c(1 - pgamma(qgamma(0.95, 20, 5), 20, 3), 1 - pgamma(qgamma(0.95, 200, 5), 200, 3)),3)
+
+)
+
+colnames(finaldf) = c(
+  "\\makecell{$95 \\%$ confidence interval \\\\ type $I$ error}", 
+  "\\makecell{$95 \\%$ confidence \\\\ interval power}", 
+  "\\makecell{Theoretical \\\\ power}"
+)
+row.names(finaldf) = c("$n = 20$", "$n = 200$")
+
+kable(finaldf, "latex", escape = FALSE, booktabs = TRUE) %>% kable_styling(latex_options = "HOLD_position")
+```
+
+From the table we can read that the test maintains the correct type I error rate, with confidence intercals for both $n$ sizes including the nominal level $\alpha - 0.05$. For power, the simluated $95 \%$ confidence intervals align closely with the theoretical power values. For $n = 20$, the observed interval is $[0.728, 0.782]$ is close to the calculated theoretical power of $0.758$, and for $n = 200$, both the simulated and theoretical power reach $1$, demonstrating that the test's effectiveness as sample size increases.
+
+
+
+
+
