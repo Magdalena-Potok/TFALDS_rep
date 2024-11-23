@@ -1,0 +1,535 @@
+---
+output: 
+  pdf_document:
+---
+
+\begin{titlepage}
+    \centering
+    {\Huge \textbf{Theoretical Foundations of the Analysis of Large Data Sets}\\[1.5cm]}
+    {\huge \textbf{Report 2}\\[4cm]}
+    {\Large \textbf{Magdalena Potok}\\[3cm]}
+    
+    \vfill
+    {\Large Prepared on:}\\[0.2cm]
+    {\Large \textbf{November 22, 2024}}
+\end{titlepage}
+
+\newpage 
+
+```{r setup, include=FALSE}
+#c za duze dla fishera - dlaczego? (odp zwiazana z #b)
+#nie trzeba generowac dla kazdej hipotezy H_i, dla kazdej H_i generujemy X_1, .. X_100 -> suma -> p-wartosc ALBO odrazu dla H_i suma cH_i T - Pois(100lambda)
+#d moc testu jak efektywne? 
+# suma pois iid to pois(n*lambda)
+set.seed(411)
+library(knitr)
+library(latex2exp)
+library(kableExtra)
+library(tidyr)
+library(tidyverse)
+library(ggplot2)
+library(gridExtra)
+```
+
+## Excercise 1
+
+Let $X_1, \dots, X_n$ be a sample from the Poisson distribution. We consider a test for the hypothesis
+$$H_0: \mathbb{E}(X_i) = 5, \quad vs \quad H_1: \mathbb{E}(X_i) > 5, $$
+which rejects the null hypothesis for large values of $\hat{X} = \frac{1}{n}\sum_{i = 1}^n X_i.$ The $p$-value of this test can be calculated using the formula: $$\mathbb{P}(T> \hat{X}) = \mathbb{P}(T> \frac{1}{n}\sum_{i = 1}^n X_i) = \mathbb{P}(nT > \sum_{i=1}^n X_i) = \mathbb{P}(Y > \sum_{i=1}^n X_i), \text{ where }Y \sim Poiss(5n).$$
+
+```{r}
+cal_pval = function(n){
+  x = rpois(n, 5)
+  p_val = 1 - ppois(sum(x), n*5)
+  return(p_val)
+}
+```
+Setting $n = 100$ for this function we calculate the $p$-value as `r round(cal_pval(100),3)`.
+\newline
+Next, we consider $1000$ repetitions of the same hypothesis test with $n = 100$ and calculate the $p$-values. The results are presented in a histogram.
+
+```{r, echo = FALSE, fig.height = 3}
+n = 1000
+v_p_val = c()
+v_p_val = sapply(1:n, function(i) {
+    x = rpois(100, 5) 
+    p_value = 1 - ppois(sum(x), 100 * 5)
+    return(p_value)
+  })
+
+ggplot(data.frame(x = v_p_val), aes(x = x))+
+  geom_histogram(bins = 20, fill = "blueviolet", color = "black")+
+  labs(
+    title = TeX("Histogram of $p$-values"),
+    x = "Value",
+    y = "Count"
+  )+
+  theme_minimal()
+
+```
+ As shown, the distribution of $p$-values does not follow a uniform distribution, as is typically expected under the null hypothesis. However, in the case of the Poisson distribution, $p$-values from discrete distributions exhibit uniform behavior only asymptotically. This characteristic is reflected in the histogram.
+\newline
+We then address the meta-problem of testing $H_0 = \cap_{j = 1}^{1000} H_{0j}$ using simulations to estimate the type I error probability for Bonferroni and Fisher tests at a significance level of $\alpha = 0.05$. 
+
+```{r echo=FALSE, cache=FALSE}
+#1c
+alpha = 0.05
+n = 1000 #ilosc testow na jeden global test
+m = 1000 #ilosc global testow dla symulacji
+v_p_val = c()
+
+run_test <- function() {
+  v_p_val = sapply(1:n, function(i) {
+    x = rpois(100, 5) 
+    p_value = 1 - ppois(sum(x), 100 * 5)
+    return(p_value)
+  })
+
+  bonf_reject = min(v_p_val) < alpha / n
+  
+  T_fisher = -2 * sum(log(v_p_val))
+  fisher_reject = T_fisher > qchisq(1 - alpha, 2 * n)
+  
+  return(c(bonf_reject, fisher_reject))
+}
+
+results = replicate(m, run_test())
+
+bonf_error_rate = mean(results[1, ])
+fisher_error_rate = mean(results[2, ])
+```
+
+
+
+
+
+```{r, echo = FALSE, cache = TRUE}
+df1 = data.frame(
+  Errorrate = c(bonf_error_rate, fisher_error_rate)
+)
+row.names(df1) = c("Bonferroni", "Fisher")
+colnames(df1) = "Error rate"
+t_df1 = t(df1)
+kable(t_df1, "latex", escape = FALSE, booktabs = TRUE)%>% kable_styling(latex_options = "HOLD_position")
+```
+
+Both results are expected to be close to the specified significance level. As observed, Bonferroni’s method more accurately approximates this value compared to Fisher’s method. The Fisher statistic, $T = -\sum_{i = 1}^n 2logp_i$, is designed for continuous distributions. Since our distribution is discrete and the $p_i$ values (as we observed above) are not uniformly distributed, the distribution of the test statistic cannot be derived accurately, and the probability of type I error may deviate from expectations.
+\newline
+We will use simulations to compare the power of the Bonferroni and Fisher test for two alternatives: \newline
+
+* Needle in the haystack
+$$\mathbb{E}(X_1) = 7 \quad \text{and} \quad \mathbb{E}(X_j) = 5 \quad \text{for } j \in \{2,\dots, 1000\},$$
+
+* Many small effects
+$$\mathbb{E}(X_j) = 5.2 \quad \text{for } j \in \{1,\dots, 100\} \quad \text{and} \quad \mathbb{E}(X_j) = 5 \quad \text{for } j \in \{101,\dots, 1000\}.$$
+```{r, echo = FALSE, cache = TRUE}
+#1d
+v_p_val = c()
+
+simulate_power <- function(alternative) {
+  v_p_val = sapply(1:n, function(i) {
+    if (alternative == "needle_in_haystack") {
+
+      x = if (i == 1) rpois(100, 7) else rpois(100, 5)
+    } else if (alternative == "many_small_effects") {
+
+      x = if (i <= 100) rpois(100, 5.2) else rpois(100, 5)
+    }
+    p_value = 1 - ppois(sum(x), 100 * 5)
+    return(p_value)
+  })
+
+  bonf_reject = min(v_p_val) < alpha / n
+
+  T_fisher = -2 * sum(log(v_p_val))
+  fisher_reject = T_fisher > qchisq(1 - alpha, 2 * n)
+  
+  return(c(bonf_reject, fisher_reject))
+}
+
+results_needle = replicate(m, simulate_power("needle_in_haystack"))
+results_many_small = replicate(m, simulate_power("many_small_effects"))
+
+
+power_needle_bonf = mean(results_needle[1, ])
+power_needle_fisher = mean(results_needle[2, ])
+power_many_small_bonf = mean(results_many_small[1, ])
+power_many_small_fisher = mean(results_many_small[2, ])
+```
+
+
+```{r, echo = FALSE}
+df = data.frame(
+  Needle = c(power_needle_bonf,power_needle_fisher),
+  Many_small = c(power_many_small_bonf,power_many_small_fisher)
+)
+row.names(df) = c("Bonferroni", "Fisher")
+colnames(df) = c("\\makecell{Needle in \\\\ the haystack}", "\\makecell{Many small \\\\\ effect}")
+kable(df, "latex", escape = FALSE, booktabs = TRUE)%>% kable_styling(latex_options = "HOLD_position")
+
+```
+
+From the results, we observe that Bonferroni’s method is more powerful in the "needle in the haystack" scenario. This test focuses on the smallest $p$-value, making it well-suited for detecting cases where at least one $p$-value is significant. However, it is less effective in detecting distributed small effects. Conversely, Fisher’s method aggregates all $p$-values, which enhances its power in scenarios with many small effects but reduces its efficacy in cases like the needle in the haystack problem.
+
+
+## Exercise 2
+
+Let $X_1, \dots, X_{100000}$ be iid random variables from $N(0,1)$ For $n \in \{2, \dots, 100000 \}$ then we can calculate function $$R_n = \frac{max\{X_i, i = 1, \dots, n \}}{\sqrt{2logn}}.$$
+We will repeat the above experiment $10$ times and plot the respective trajectories of $R_n$.
+
+```{r, echo= FALSE, cache = TRUE}
+set.seed(411)
+r_n = function(n, x){
+  
+  return( max(x[1:n])/sqrt(2*log(n)))
+}
+
+r_n_m = replicate(10,{ x = rnorm(100000, 0, 1)
+sapply(2:100000, r_n, x = x)}) 
+
+```
+
+
+
+```{r, echo = FALSE, warning = FALSE, fig.height = 3}
+
+r_n_m_df = as.data.frame(r_n_m)
+colnames(r_n_m_df) = paste0("Trajectory_", 1:10) 
+r_n_m_df$n = 2:100000
+r_n_m_long = pivot_longer(r_n_m_df, cols = starts_with("Trajectory"), 
+                          names_to = "Trajectory", values_to = "Value")
+
+ggplot(r_n_m_long, aes(x = n, y = Value, color = Trajectory, group = Trajectory)) +
+  geom_line() +
+  labs(title = TeX("Trajectories of $R_n$"), x = "n", y = TeX("$R_n$")) +
+  theme_minimal() +
+  scale_color_viridis_d() + 
+  ylim (0, 1.5)
+
+```
+
+Bonferroni method rejects the global null when the smalles $p_i \leq \alpha/n$, we can equivalently check if $max X_i > z_{\alpha/n}$. As $n$ becomes large $z_{\alpha/n}$ behaves asymptotically as $z_{\alpha/n} \approx \sqrt{2logn}$. This means we reject when $max X_i > \sqrt{2logn}$, making the rejection threshold asymptotic to $\sqrt{2logn}$. In this plot, we divide $max X_i$ by $\sqrt{2logn}$, resulting in the trajectories of $R_n$. As shown, for large $n$ $R_n$ is always below value $1$ 
+$$\frac{max{X_i}}{\sqrt{2logn}} < 1 \Rightarrow max{X_i} < \sqrt{2logn},$$
+this means we do not reject the global null hypothesis $H_0$.\newline
+In the excercise 4, we assume that our needle equals a little bit more, than the rejection threshold $\sqrt{2logn}$. This means that as $n$ will increase, the power of the test will increase too. 
+
+## Exercise 3
+
+Let $Y = (Y_1, \dots, Y_n)$ be the random vector from $N(\mu, I)$ distribution. For the  classical needle in haystack problem $$H_0: \mu = 0 \quad vs \quad H_1: \text{one of the elements of } \mu \text{ is equal to } \gamma.$$
+We consider the statistics $L$ of the optimal Neyman-Pearson test 
+$$L = \frac{1}{n} \sum_{i = 1}^n e^{\gamma Y_i-\gamma^2/2},$$
+and its approximation
+$$\tilde L = \frac{1}{n} \sum_{i = 1}^n e^{\gamma Y_i-\gamma^2/2} \mathbb{1}_{(Y_i < \sqrt{2logn})}.$$
+
+For $\gamma = (1-\epsilon)\sqrt{2logn}$ with $\epsilon = 0.1$ and $n \in \{1000, 10000, 100000\}$ we will use $1000$ replicates to study propeties of $L$ and $\tilde L$ statistics.
+
+```{r, echo = FALSE, cache = TRUE}
+eps = 0.1
+n = c(1000,10000,100000)
+
+L_func = function(i,n){
+  Y = rnorm(n)
+  gamma = (1-eps)*sqrt(2*log(n))
+  L = 1/n * sum(exp(1)^(gamma*Y - gamma^2/2))
+  L_tild = 1/n * sum(exp(1)^(gamma*Y - gamma^2/2)*(Y<sqrt(2*log(n))))
+  return(c(L, L_tild))
+}
+
+
+results_1 = sapply(1:1000, L_func, n = n[1])
+results_2 = sapply(1:1000, L_func, n = n[2])
+results_3 = sapply(1:1000, L_func, n = n[3])
+
+results = rbind(t(results_1), t(results_2), t(results_3))
+results = cbind(results, "n" = c(rep(n[1], 1000), rep(n[2], 1000), rep(n[3], 1000)))
+
+# Tworzenie odpowiednich nazw dla kolumn i wierszy
+colnames(results) = c("L", "L_tild", "n")
+rownames(results) = rep(1:1000,3)
+# Wyświetlanie wyników
+results = as.data.frame(results)
+
+```
+
+```{r, echo = FALSE, warning = FALSE}
+
+L_1000 = results[,1][results$n == 1000]
+L_10000 = results[,1][results$n == 10000]
+L_100000 = results[,1][results$n == 100000]
+L_t_1000 = results[,2][results$n == 1000]
+L_t_10000 = results[,2][results$n == 10000]
+L_t_100000 = results[,2][results$n == 100000]
+
+b1_L = ggplot(data.frame(x = L_1000), aes(x = x))+
+  geom_histogram(bins = 30, fill = "skyblue", color = "black")+
+  labs(
+    title = TeX("Statistics $L, n = 1000$"),
+    x = "Value",
+    y = "Count"
+  )+
+  theme_minimal()+
+  scale_x_continuous(limits = c(0,3))+
+  scale_y_continuous(limits = c(0,230))
+
+b2_L = ggplot(data.frame(x = L_10000), aes(x = x))+
+  geom_histogram(bins = 30, fill = "skyblue", color = "black")+
+  labs(
+    title = TeX("Statistics $L, n = 10000$"),
+    x = "Value",
+    y = "Count"
+  )+
+  theme_minimal()+
+  scale_x_continuous(limits = c(0,3))+
+  scale_y_continuous(limits = c(0,230))
+
+b3_L = ggplot(data.frame(x = L_100000), aes(x = x))+
+  geom_histogram(bins = 30, fill = "skyblue", color = "black")+
+  labs(
+    title = TeX("Statistics $L$, n = 100000"),
+    x = "Value",
+    y = "Count"
+  )+
+  theme_minimal()+
+  scale_x_continuous(limits = c(0,3))+
+  scale_y_continuous(limits = c(0,230))
+
+
+b1_L_t = ggplot(data.frame(x = L_t_1000), aes(x = x))+
+  geom_histogram(bins = 30, fill = "darkmagenta", color = "black")+
+  labs(
+    title = TeX("Statistics $\\tilde{L}, n = 1000$"),
+    x = "Value",
+    y = "Count"
+  )+
+  theme_minimal()+
+  scale_x_continuous(limits = c(0,3))+
+  scale_y_continuous(limits = c(0,230))
+
+b2_L_t = ggplot(data.frame(x = L_t_10000), aes(x = x))+
+  geom_histogram(bins = 30, fill = "darkmagenta", color = "black")+
+  labs(
+    title = TeX("Statistics $\\tilde{L}$, n = 10000"),
+    x = "Value",
+    y = "Count"
+  )+
+  theme_minimal()+
+  scale_x_continuous(limits = c(0,3))+
+  scale_y_continuous(limits = c(0,230))
+
+b3_L_t = ggplot(data.frame(x = L_t_100000), aes(x = x))+
+  geom_histogram(bins = 30, fill = "darkmagenta", color = "black")+
+  labs(
+    title = TeX("Statistics $\\tilde{L}$, n = 100000"),
+    x = "Value",
+    y = "Count"
+  )+
+  theme_minimal()+
+  scale_x_continuous(limits = c(0,3))+
+  scale_y_continuous(limits = c(0,230))
+
+grid.arrange(b1_L,b1_L_t, b2_L, b2_L_t,b3_L,  b3_L_t, ncol = 2,top = "Comparing histograms without outliers")
+
+
+```
+For better comparison of histograms, the x-axis of $L$ was restricted to a specific range to highlight the similarities between $L$ and its approximation in their aggregation. The histogram of $\tilde L$ is showing a much more concentrated spread compared to $L$, especiallly when outliers are included. However, when outliers are excluded and under the null hypothesis, the histograms of $L$ and $\tilde L$ appear similar.
+```{r, echo = FALSE, fig.height = 2, warning = FALSE}
+b3_L = ggplot(data.frame(x = L_100000), aes(x = x))+
+  geom_histogram(bins = 30, fill = "skyblue", color = "black")+
+  labs(
+    title = TeX("Statistics $L$, n = 100000"),
+    x = "Value",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+
+grid.arrange(b3_L, b3_L_t, top = "Comparing histograms with outliers for n = 100000", ncol = 2)
+```
+When outliers are included, the histogram for $L$ demonstrates a long tail, indicating a presence of extreme values. In contrast, $\tilde L$ shows a more concentrated spread. Comparision for $n = 1000, n = 10000$ and $n = 100000$ looks the same. \newline
+Properties of $L$ and $\tilde L$ under the null hypothesis are shown in the table below. Theoretical probability is calculated from formula:
+$$\mathbb{P}(\tilde L \neq L) \leq \mathbb{P}(max_j X_j > T_n) \leq \sum_{j=1}^n \frac{\phi(T_n)}{T_n} = \frac{1}{\sqrt{2\pi}}\frac{1}{\sqrt{2logn}} \rightarrow 0, n \rightarrow \infty$$
+$$\mathbb{P}(\tilde L = L) = 1 - \mathbb{P}(\tilde L \neq L) \geq 1 - \frac{1}{\sqrt{2\pi}}\frac{1}{\sqrt{2logn}} \rightarrow 0, n \rightarrow \infty$$
+```{r, echo = FALSE}
+df = data.frame(
+  VarL = round(c(var(L_1000), var(L_10000), var(L_100000)),3),
+  VarL_t = round(c(var(L_t_1000), var(L_t_10000), var(L_t_100000)),3),
+  prawd = c(sum(L_1000 == L_t_1000)/1000, sum(L_10000 == L_t_10000)/1000, sum(L_100000 == L_t_100000)/1000),
+  teoret = round(c(1-1/(sqrt(2*pi))*1/(sqrt(2*log(1000))),1-1/(sqrt(2*pi))*1/(sqrt(2*log(10000))),1-1/(sqrt(2*pi))*1/(sqrt(2*log(100000)))),3)
+)
+row.names(df) = c("$n = 1000$", "$n = 10000$", "$n = 100000$")
+colnames(df) = c("$var(L)$", "$var(\\tilde{L})$","$\\mathbb{P}_{H_0}(L = \\tilde L)$", "Theoretical prob.")
+
+kable(df, "latex", escape = FALSE, booktabs = TRUE)%>% kable_styling(latex_options = "HOLD_position")
+```
+Variances of $L$ are significantly higher than that of $\tilde L$ across all sample sizes $n$, as was evident in the histograms. Furthermore, the variance of $\tilde L$ decreases as $n$ increases, indicating a stabilization effect under the null hypothesis. The computed probability $\mathbb{P}_{H_0}(L = \tilde L)$ closely matches the theoretical bound, converging to $1$ as $n \rightarrow \infty$.
+
+## Exercise 4
+
+Using simulations, we determine the critical value of the optimal Neyman-Pearson test and compare its power to that of the Bonferroni test for the needle in the haystack problem. The analysis is conducted for $n \in \{500, 5000, 50000 \}$ and the needle $\gamma  = (1+ \epsilon)\sqrt{2logn}$ with $\epsilon \in \{0.05, 0.2 \}$. \newline
+In the Neyman-Pearson test, we reject $H_0$ when $L = \frac{1}{n} \sum_{i = 1}^n e^{\gamma Y_i - \gamma^2/2} > c$, where $c$ is the critical value the critical value chosen such that the probability of rejecting $H_0$ under the null hypothesis does not exceed the significance level of the test. Equivalently, when the statistic $L$ is too complicated, we reject $H_0$ when $log(L) > log(c) = c'$. Since the likelihood ratio and the log-likelihood ratio do not follow a standard distribution, simulations are used to determine the critical value of the test. For each $n$ and $\epsilon$ we generate $1000$ log-likelihood ratios and coompute the $1-\alpha$ to get the critical value. The results are summarized in the table below.
+
+
+```{r, echo = FALSE, cache = TRUE}
+
+# L to stat NP - nie wiemy z jakiego rozkladu, moc potrzebujemy wart krytyczna
+# generujemy probe z H_0 na podstawie liczymy L, wiele razy
+# na podstawie L asymptotyczny kwantyl quantile(log(wektor), alpha lub 1-alpha)
+# nakladamy log, bo L rosnie szybko wykladniczo dla n i gamma
+# mozna zrobic wykresy e_1 ~ n, e_2 ~ n ciekawa jaka moc testu
+# moc bonf i moc NP i porownac wyniki,moce daza do 1
+# NP musi miec wiekszy niz bonf
+# H_1: losowa jeswt z rozkl N(gamma,1)
+
+n = c(500,5000,50000)
+eps = c(0.05,0.2)
+alpha = 0.05
+k = 10000 # ilosc powtorzen
+
+#L = sapply(1:k, function(i){
+#  Y = rnorm(n)
+#  1/n* sum(exp(gamma*Y-gamma^2/2))})
+#as.numeric(quantile(log(L), 0.95))
+
+crit_val = function(n,e){
+  gamma = (1 + e)*sqrt(2*log(n))
+  L = sapply(1:k, function(i){
+    Y = rnorm(n)
+    1/n* sum(exp(gamma*Y-gamma^2/2))})
+  return(as.numeric(quantile(log(L), 0.95)))
+}
+
+c_11 = crit_val(n[1],eps[1])
+c_12 = crit_val(n[1],eps[2])
+c_21 = crit_val(n[2],eps[1])
+c_22 = crit_val(n[2],eps[2])
+c_31 = crit_val(n[3],eps[1])
+c_32 = crit_val(n[3],eps[2])
+
+
+
+#c_11 = crit_val(n[1],eps[1])
+
+
+#n = 500
+#k = 10000 # ilosc powtorzen
+#eps = 0.05
+#gamma = (1 + eps)*sqrt(2*log(n))
+
+#Y = rnorm(n)
+#Y[1] = rnorm(1,gamma,1)
+#np = sapply(1:k, function(i){
+#    Y = rnorm(n)
+#    Y[1] = rnorm(1,gamma,1)
+#    1/n* sum(exp(gamma*Y-gamma^2/2)) > c})
+#mean(np)
+#bonf = sapply(1:k, function(i){
+#    Y = rnorm(n)
+#    Y[1] = rnorm(1,gamma,1)
+#    max(abs(Y)) > abs(qnorm(alpha/(2*n)))})
+#mean(bonf)
+
+power = function(n,e,c){
+  gamma = (1 + e)*sqrt(2*log(n))
+  np = sapply(1:k, function(i){
+    Y = rnorm(n)
+    Y[1] = rnorm(1,gamma,1)
+    1/n* sum(exp(gamma*Y-gamma^2/2)) > c})
+  bonf = sapply(1:k, function(i){
+    Y = rnorm(n)
+    Y[1] = rnorm(1,gamma,1)
+    max(abs(Y)) > abs(qnorm(alpha/(2*n)))})
+  return(c(mean(np), mean(bonf)))
+}
+
+power11 = power(n[1], eps[1], c_11)
+power12 = power(n[1], eps[2], c_12)
+power21 = power(n[2], eps[1], c_21)
+power22 = power(n[2], eps[2], c_22)
+power31 = power(n[3], eps[1], c_31)
+power32 = power(n[3], eps[2], c_32)
+
+
+
+```
+
+
+
+
+
+```{r, echo = FALSE}
+df = data.frame(
+  eps1 = c(c_11,c_21,c_31),
+  eps2 = c(c_12,c_22,c_32)
+)
+
+tdf = t(df)
+colnames(tdf) = c("$n = 500$", "$n = 5000$", "$n = 50000$")
+rownames(tdf) = c("$\\epsilon = 0.05$", "$\\epsilon = 0.2$")
+
+kable(tdf, "latex", escape = FALSE, booktabs = TRUE)%>% kable_styling(latex_options = "HOLD_position")
+```
+
+For each combination $n$ and $\epsilon$ we perform a random sample test to compare the power of the Neyman-Pearson test against the Bonferroni test.
+
+```{r, echo = FALSE}
+
+df_1 = data.frame(
+  ep1 = c(power11[1], power21[1], power31[1], power11[2], power21[2], power31[2]),
+  ep2 = c(power12[1],power22[1],power32[1],power12[2],power22[2],power32[2])
+)
+tdf_1 = t(df_1)
+colnames(tdf_1) = c("$n = 500$", "$n = 5000$", "$n = 50000$","$n = 500$", "$n = 5000$", "$n = 50000$")
+rownames(tdf_1) = c("$\\epsilon = 0.05$", "$\\epsilon = 0.2$")
+
+kable(tdf_1, "latex", escape = FALSE, booktabs = TRUE)%>% kable_styling(latex_options = "HOLD_position")%>%
+  add_header_above(c(" "=1,"Power of Neyman-Pearson test" = 3, "Power of Bonferroni test" = 3))
+
+```
+The results demonstrate that the power of the Neyman-Pearson test increases with the number of observations $n$. Additionally, larger values of $\epsilon$, which correspond to a more significant $\gamma$, also enhance the power of the test. The Bonferroni test consistently exhibits lower power compared to the Neyman-Pearson test for all values of $n$ and $\epsilon$. However, its power also increases with $n$ and $\epsilon$, following a trend similar to the Neyman-Pearson test. This result is reasonable, as we mentioned that in excercise 2.
+
+## Exercise 5
+We compare the cumulative distribution functions (CDFs) for the standard normal distribution and Student's t-distribution for degrees of freedom $df \in \{1,2,5,10,50,100\}$.
+
+
+```{r, echo = FALSE, fig.height = 3}
+# spr ctg t-studenta jeden kolor, normalny inny im wiecej df tym blizej do norm
+# przeskalowany w chi2 
+# X - znamy F_X(t) dyst
+# niech Y = aX + b, F_y(t) = ?
+
+x = seq(-6, 6, length.out = 1000)
+par(mar = c(4, 3, 3, 10),xpd = TRUE)
+plot(x, pnorm(x, 0, 1), type = "l",lwd = 2, col = rainbow(7)[1], ylab = "P(X < k)", xlab = "k")
+grid()
+#lines(x, pt(x,3))
+df = c(1,3,5,10,50,100)
+for (i in 1:6){
+  lines(x, pt(x, df[i]), lwd = 2, col = rainbow(7)[i+1])
+}
+
+legend("topright", inset = c(-0.45, 0.2),  
+       legend = c("N(0,1)", paste("Student, df = ", df)), 
+       col = rainbow(7), lwd = 2, cex = 0.8, bty = "n")
+par(xpd = FALSE) 
+
+
+
+```
+As the degrees of freedom increase, the Student's t-distribution converges to the standard normal distribution. When $df = 100$ the difference between CDFs is negligible. This result aligns with the theoretical fact that as $df \rightarrow \infty, \quad t_{df} \rightarrow N(0,1)$. \newline
+
+Next, we compare the CDFs of the standard normal distribution with those of the standardized chi-squared distribution for $df = \{1,3,5,10,50,100\}$. The standarization is defined as $T = \frac{\chi^2_{df} - df}{\sqrt{2df}}$. Since the distribution of $T$ is not standard, we derive its CDF using the following modification:
+
+$$\mathbb{P} \left( \frac{\chi^2- df}{\sqrt{2df}} <k  \right) = \mathbb{P} \left(  \chi^2 < k \sqrt{2df} + df \right) = F_{\chi^2}(k\sqrt{2df} + df),$$
+where $F_{\chi^2}$ is the CDFs of the chi-squared distribution.
+
+```{r, echo = FALSE, fig.height = 3}
+par(mar = c(4, 3, 3, 10),xpd = TRUE)
+plot(x, pnorm(x, 0, 1), type = "l",lwd = 1, col = rainbow(7)[1], ylab = "P(X<k)")
+grid()
+for(i in 1:6){
+  lines(x, pchisq(x*sqrt(2*df[i])+df[i], df[i]), col = rainbow(7)[i+1])
+}
+legend("topright", inset = c(-0.4,0.2),legend = c("N(0,1)", paste(TeX("chi^2, df = "), df)), col = rainbow(7), lwd = 2, cex = 0.8, bty = "n")
+
+```
+As the degrees of freedom increase, the chi-squared distribution converges to the standard normal distribution. This convergence is a consequence of the central limit theorem. When $df = 100$ the difference is almost invisible, but the convergence is slower than for the student distribution. 
